@@ -64,7 +64,7 @@ require Headfile;
 use hoaoa qw(aoa_hash_to_headfile);
 #require shared;
 use pipeline_utilities;
-use civm_simple_util qw(activity_log load_file_to_array get_engine_constants_path find_file_by_pattern printd whoami whowasi debugloc sleep_with_countdown $debug_val $debug_val $debug_locator);
+use civm_simple_util qw(activity_log load_file_to_array find_file_by_pattern trim printd whoami whowasi debugloc sleep_with_countdown $debug_val $debug_val $debug_locator);
 use vars qw($HfResult);
 #
 activity_log();
