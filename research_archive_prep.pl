@@ -218,7 +218,7 @@ sub lpprompt {
     return $entry;
 }
     
-sub auto_opt  { 
+sub primitive_auto_opt  { 
     # demonstrating how to put the getoption code in a function.
     # this isnt necessary, its just helpful so it can be moved around easily in the code.
     # this could be the mechanism behind common options, where our main function passed 
