@@ -81,18 +81,53 @@ exit;
 
 
 sub main  {
-    #    my $v_hash={"global_1=s"=>\$global_1, "global_2=s"=>\$global_2, "bool_input"=>\$option_hash{"bool_readback"}, "local_int=i"=> \$local_int, "floatnumber=f"=>\$local_float}; # example of the possibilities
-    my $v_hash={};
+
+    my $ec=load_engine_deps();#$engine
+    ###
+    # define the required entries, and set a rough help for them
+    ###
+    my $lookup={};
+    ${$lookup->{"archivedestination_unique_item_name=s"}}=
+	"REQ: Runnumber to be stored in DB ex (B000001)";
+    ${$lookup->{"U_specid=s"}}=
+	"REQ: specimen code for DB ex 100101-1:0";
+    ${$lookup->{"archivedestination_project_directory_name=s"}}=
+	"REQ: Project code ex (00.blabla.01)";
+    ${$lookup->{"U_civmid:s"}}=
+	"OPT: civmuser (initials or short name), ex (you)";
+    #$lookup->{"archivesource_item"}=
+    #"local folder name, ex myspecialdata, can leave blank and will use ";
+    #$lookup->{"archivesource_directory"}=
+    #"remote directory, generally the spacename ex ".$ec->get_value('engine_work_directory');
+    ${$lookup->{"U_optional:s"}}=
+	"OPT: an 80 character string telling especially important info";
+    ${$lookup->{"U_root_runno:s"}}=
+	"OPT: source data if there is any, otherwise leave blank ex (B000001)";
+    # we'll maintain ta list of keys outside the hash so we can filter for non-args of importance.
+    my @k=keys(%$lookup);# get the list of keys, Before we add U_data_folder, because we want to prompt for that first, and outside the rest.
+    ${$lookup->{"U_data_folder=s"}}=
+	"REQ: the local data folder ex. (".$ec->get_value('engine_work_directory').'/'."myspecialdata)";
+    push(@k, "U_data_folder");
+    
     # for good error checking the hash key can take they expected value type.
     # values types can be s i o f   O is extended integer...?
     # values can boolean or take a value, when taking a value it can be optional using : instead of =;
     #             $arg_hash{extra_runno_suffix}=$extra_runno_suffix;
-    my $href=auto_opt($v_hash);
+    ${$lookup->{"auto_opt_deref_scalar"}}=1;
+    $lookup=auto_opt($lookup);
 
+    # cleanu p keys because of the option processing suffixes
+    # only =s supported just now.
+    foreach(@k){
+	$_ =~ s/[:=]s$//x;
+    }
+    #Data::Dump::dump($lookup); die "testing";
     
-    my $ec=load_engine_deps();#$engine
     my $HfResult_path="";
     my $hfmode='new';
+
+    # this is cache of the previous run, needt o handle better
+    # is this okay beacuse fnames will be a time sorted list? or is this just a distracty pos?
     my @fnames=find_file_by_pattern($ec->get_value('engine_recongui_paramfile_directory'),'^arp_.*$');
     if (scalar(@fnames)>0){
 	$HfResult_path=$fnames[0];#$ec->get_value('engine_recongui_paramfile_directory').'/'.
@@ -100,41 +135,22 @@ sub main  {
     }
     # .'/arp_'.$HfResult->get_value("archivesource_item")  ,# paramfilepath
     
-    ###
-    # define the required entries, and set a rough help for them
-    ###
-    my $lookup={};
-    $lookup->{"archivedestination_unique_item_name"}=
-	"REQ: Runnumber to be stored in DB ex (B000001)";
-    $lookup->{"U_specid"}=
-	"REQ: specimen code for DB ex 100101-1:0";
-    $lookup->{"archivedestination_project_directory_name"}=
-	"REQ: Project code ex (00.blabla.01)";
-    $lookup->{"U_civmid"}=
-	"OPT: civmuser (initials or short name), ex (you)";
-    #$lookup->{"archivesource_item"}=
-    #"local folder name, ex myspecialdata, can leave blank and will use ";
-    #$lookup->{"archivesource_directory"}=
-    #"remote directory, generally the spacename ex ".$ec->get_value('engine_work_directory');
-    $lookup->{"U_optional"}=
-	"OPT: an 80 character string telling especially important info";
-    $lookup->{"U_root_runno"}=
-	"OPT: source data if there is any, otherwise leave blank ex (B000001)";
-    my @k=keys(%$lookup);# get the list of keys, Before we add U_data_folder, because we want to prompt for that first, and outside the rest.
-    $lookup->{"U_data_folder"}=
-	"REQ: the local data folder ex. (".$ec->get_value('engine_work_directory').'/'."myspecialdata)";
     
     $HfResult = new Headfile ($hfmode, $HfResult_path);
     if($hfmode eq 'rc'){ # rc is re-create hf, nf is new file. maybe nf is better type?
 	$HfResult->read_headfile if ($HfResult->check());
     }
-    # Prompt for data folder first, then get all the rest.
-    $HfResult->set_value("U_data_folder","__NULL____");
-    while( ! -d $HfResult->get_value("U_data_folder") ){
-	print("Didnt find data folder, please enter\n");
-	$HfResult->set_value("U_data_folder",lpprompt($lookup->{"U_data_folder"}));
+
+    # IF not given as a command line arg, prompt.
+    if( $lookup->{"U_data_folder"} =~ m/^REQ:/xi ) {
+	# Prompt for data folder first, then get all the rest.
+	$HfResult->set_value("U_data_folder","__NULL____");
+	while( ! -d $HfResult->get_value("U_data_folder") ){
+	    print("Didnt find data folder, please enter\n");
+	    $HfResult->set_value("U_data_folder",lpprompt($lookup->{"U_data_folder"}));
+	}
     }
-			 
+    
     # $HfResult->set_value('U_civmid',$HfResult->get_value_like('U_civmid'));
     # Insert archivereserach required items at last second.
     $HfResult->set_value('U_db_insert_type'                         , "research");
@@ -157,14 +173,24 @@ sub main  {
     # "U_scanner"
     #Data::Dump::dump(@k);
     foreach(@k){
+	# last value
 	my $lv=$HfResult->get_value($_);
 	if ($lv =~  /^(NO_KEY|UNDEFINED_VALUE|EMPTY_VALUE)$/ ){
 	    $lv=''; # set blank for no existing val
 	} else {
 	    $lv=" current ($lv)";
 	}
-	my $v=lpprompt($lookup->{$_}.$lv);
-	if ($v ne "") {
+	
+	my $v=$lookup->{$_};
+	
+	# for some reason lookup value not set?
+	if( ! defined $v || $v =~ m/^(REQ|OPT):/xi ) {
+	    printd(45,"$_ not defined in lookup\n") if ! defined $v;
+	    $v=lpprompt($lookup->{$_}.$lv);
+	}
+	require Scalar::Util;
+	Scalar::Util->import(qw(looks_like_number));
+	if ($v ne "" && ! looks_like_number($v) ) {
 	    $HfResult->set_value($_,trim($v));
 	}
     }
