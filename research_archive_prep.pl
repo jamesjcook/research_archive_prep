@@ -1,51 +1,68 @@
-#!/usr/bin/perl
-# a simple reserarch archive helper to set variable in a headfile
-
-###
-# Boiler plate
-###
+#!/usr/bin/env perl
+# To keep up with ever improving boiler plate ideas, this exists to capture them
+# Boilerplate code is rarely updated, but often it's a good idea.
+# So this'll exist as a record of the "current standard" maybe, riddled with me
+# explaining things to ... me.
+#
+# Special she-bang finds default perl. This should be correct most the time from here forward.
 use strict;
-use warnings;
-my $can_dump = eval {
-    # this little snippit checks if the cool data structure dumping code is available.
-    require Data::Dump;
-    Data::Dump->import(qw(dump));
-    1;
-};
-# root of radish pipeline folders
-use Env qw(RADISH_PERL_LIB RADISH_RECON_DIR WORKSTATION_HOME WKS_SETTINGS RECON_HOSTNAME WORKSTATION_HOSTNAME);
-my $ERROR_EXIT = 1;
-my $GOOD_EXIT  = 0;
+use warnings FATAL => qw(uninitialized);
+# carp and friends, backtrace yn, fatal yn
+use Carp qw(cluck confess carp croak);
+our $DEF_WARN=$SIG{__WARN__};
+our $DEF_DIE=$SIG{__DIE__};
+# Seems like it'd be great to have this signal handler dependent on debug_val.
+# hard to wire that into a general concept.
+# compile time issues, but probably fine at runtime.
+#$SIG{__WARN__} = sub { cluck "Undef value: @_" if $_[0] =~ /undefined|uninitialized/;&{$DEF_WARN}(@_) };
+$SIG{__WARN__} = sub {
+    cluck "Undef value: @_" if $_[0] =~ /undefined|uninitialized/;
+    #if(defined $DEF_WARN) { &{$DEF_WARN}(@_)}
+    if(defined $DEF_WARN) {
+        &{$DEF_WARN}(@_);
+    } else { warn(@_); }
+  };
 
-if (! defined($RADISH_PERL_LIB)) {
-    print STDERR "Cannot find good perl directories, quiting\n";
-    exit $ERROR_EXIT;
-}
-if (! defined($RADISH_RECON_DIR) && ! defined ($WORKSTATION_HOME)) {
-    print STDERR "Environment variable RADISH_RECON_DIR must be set. Are you user omega?\n";
-    print STDERR "   CIVM HINT setenv RADISH_RECON_DIR /recon_home/script/dir_radish\n";
-    print STDERR "Bye.\n";
-    exit $ERROR_EXIT;
-}
-if (! defined($RECON_HOSTNAME) && ! defined($WORKSTATION_HOSTNAME)) {
-    print STDERR "Environment variable RECON_HOSTNAME or WORKSTATION_HOSTNAME must be set.";
-    exit $ERROR_EXIT;
+#### VAR CHECK
+# Note, vars will have to be hardcoded becuased this is a check for env.
+# That means, ONLY variables which will certainly exist should be here.
+# BOILER PLATE
+BEGIN {
+    # we could import radish_perl_lib direct to an array, however that complicates the if def checking.
+    my @env_vars=qw(RADISH_PERL_LIB BIGGUS_DISKUS WORKSTATION_DATA WORKSTATION_HOME);
+    my @errors;
+    use Env @env_vars;
+    foreach (@env_vars ) {
+        push(@errors,"ENV missing: $_") if (! defined(eval("\$$_")) );
+    }
+    die "Setup incomplete:\n\t".join("\n\t",@errors)."\n  quitting.\n" if @errors;
 }
 use lib split(':',$RADISH_PERL_LIB);
-#
-# for the auto_opt
-#
-use Getopt::Long ;
-Getopt::Long::Configure ("bundling", "ignorecase_always");
-#
-#####
 
-###
-# fairly standard includes
-###
-use English;
+use Cwd qw(abs_path);
 use File::Basename;
-use File::Glob qw(:globally :nocase);
+BEGIN {
+    # In rare conditisons __FILE__ and abs_path fail.
+    # These seem to be permission related.
+    # Specifically, it appears if we have permission to the file, but NOT to the link this can occur.
+    my $fp=abs_path(__FILE__);
+    if(! defined $fp ){ die "error getting code path";}
+    if($fp eq "" ){ die "error getting code path, got blank";}
+    my $dx=dirname($fp);
+}
+#use lib dirname(abs_path($0));
+use lib dirname(abs_path(__FILE__));
+
+# my absolute fav civm_simple_util components.
+use civm_simple_util qw(activity_log printd $debug_val);
+# On the fence about including pipe utils every time
+use pipeline_utilities;
+# pipeline_utilities uses GOODEXIT and BADEXIT, but it doesnt choose for you which you want.
+$GOODEXIT = 0;
+$BADEXIT  = 1;
+# END BOILER PLATE
+
+# a simple reserarch archive helper to set variable in a headfile
 
 ###
 # pipe vars
@@ -63,8 +80,7 @@ require Headfile;
 #import hoaoa qw(aoa_hash_to_headfile);
 use hoaoa qw(aoa_hash_to_headfile);
 #require shared;
-use pipeline_utilities;
-use civm_simple_util qw(activity_log load_file_to_array find_file_by_pattern trim printd whoami whowasi debugloc sleep_with_countdown $debug_val $debug_val $debug_locator);
+use civm_simple_util qw( load_file_to_array find_file_by_pattern trim whoami whowasi debugloc sleep_with_countdown $debug_locator);
 use vars qw($HfResult);
 #
 activity_log();
@@ -226,10 +242,10 @@ sub main  {
     }
 
     if ( !scalar(@errors) ) {
-        exit $GOOD_EXIT;
+        exit $GOODEXIT;
     } else {
         printd(5,join("\n",@errors));
-        exit $ERROR_EXIT
+        exit $BADEXIT;
     }
 }
 
@@ -258,10 +274,8 @@ sub primitive_auto_opt  {
     #$o->{"someint=i"}=0;
 
     $o={%{$o},%{$in}}; # add the input hash to any we want to hard code into auto_opt.
-    if ( $can_dump && $debug_val>=45) {
-        printd(45,"Show the arg_hash before sent off to GetOptions\n");
-        Data::Dump::dump($o);
-    }
+    disp(["Show the arg_hash before sent off to GetOptions\n",$o]);
+
     # Quick patch to dump argument options right into getoptions
     # values types can be s i o f   O is extended integer...?
     # values can be boolean or take a value, when taking a value it can be optional using : instead of =;
